@@ -129,6 +129,7 @@ public class Lesk {
 	 * 
 	 */
 	private Map<String, Pair<String, Integer> > getSignatures(String lemma, String pos_name) {
+		return null;
 	}
 	
 	/**
@@ -142,6 +143,7 @@ public class Lesk {
 	 * @return a list of strings (words, punctuation, etc.)
 	 */
 	private ArrayList<String> str2bow(String str) {
+		return null;
 	}
 	
 	/**
@@ -156,6 +158,7 @@ public class Lesk {
 	 * @return similarity score
 	 */
 	private double similarity(ArrayList<String> bag1, ArrayList<String> bag2, String sim_opt) {
+		return 0;
 	}
 	
 	/**
@@ -209,6 +212,7 @@ public class Lesk {
 	 * @return a list of [top K precision, top K recall, top K F1]
 	 */
 	private ArrayList<Double> evaluate(ArrayList<String> groundTruths, HashMap<String, Double> predictions, int K) {
+		return null;
 	}
 	
 	/**
@@ -219,6 +223,7 @@ public class Lesk {
 	 * @param K Top-K precision/recall/f1
 	 */
 	public ArrayList<Double> evaluate(int K) {
+		return null;
 	}
 
 	/**
