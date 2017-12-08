@@ -19,6 +19,8 @@ import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.logging.RedwoodConfiguration;
 
+//import edu.stanford.nlp.ling.CoreAnnotations.LemmaAnnotation;
+
 public class Lesk {
 
 	/** 
@@ -63,19 +65,73 @@ public class Lesk {
 	
 	/* This section contains the NLP tools */
 	
-	private Set<String> POS = new HashSet<String>(Arrays.asList("ADJECTIVE", "ADVERB", "NOUN", "VERB"));
+	private static final Set<String> POS = new HashSet<String>(Arrays.asList("ADJECTIVE", "ADVERB", "NOUN", "VERB"));
 	
-	private IDictionary wordnetdict;
+	private static IDictionary wordnetdict;
 	
 	private StanfordCoreNLP pipeline;
 
-	private Set<String> stopwords;
+	private static Set<String> stopwords;
 	
+	private static IDictionary initDictionary(){
+		String path = "/home/billy/Documents/nlp/p4_nlp/data/dict";
+		File dictFile = null;
+		dictFile = new File(path);
+		if(dictFile == null) return null;
+
+		IDictionary dict = new Dictionary(dictFile);
+		try{ 
+			dict.open();
+		} 
+		catch(IOException e){
+			e.printStackTrace();
+			return null; 
+		}
+
+		return dict;
+	}
+
+	private static Set<String> readStopWords(){
+		String path = "/home/billy/Documents/nlp/p4_nlp/data/stopwords.txt";
+		Set<String> out = null;
+
+		//Based on gtonic and Knobo answer on stack overflow
+		try {
+			BufferedReader br = new BufferedReader(new FileReader(path));
+			String line = br.readLine();
+			out = new HashSet<String>();
+			while (line != null) {
+				out.add(line);
+				line = br.readLine();
+			}
+			br.close();
+		}catch(FileNotFoundException fnfe){
+			fnfe.printStackTrace();
+			return null;
+		}catch(IOException ioe){
+			ioe.printStackTrace();
+			return null;
+		}
+
+		return out;
+	}
+
 	/**
 	 * TODO:
 	 * The constructor initializes any WordNet/NLP tools and reads the stopwords.
 	 */
 	public Lesk() {
+		//Dictionary and stopwords already done statically
+
+		// Create StanfordCoreNLP object properties, with POS tagging
+        // (required for lemmatization), and lemmatization
+        Properties props;
+        props = new Properties();
+        props.put("annotators", "tokenize, ssplit, pos, lemma");
+
+        // StanfordCoreNLP loads a lot of models, so you probably
+        // only want to do this once per execution
+        this.pipeline = new StanfordCoreNLP(props);
 	}
 	
 	/**
@@ -96,6 +152,54 @@ public class Lesk {
 		}
 	}
 
+	private void inputSentence(String line){
+		Annotation annotation = new Annotation(line);
+		this.pipeline.annotate(annotation);
+		Sentence mySentence = new Sentence();
+
+		//from cricket_007 and chris on stack overflow
+
+		// Iterate over all of the sentences found
+        List<CoreMap> sentences = annotation.get(SentencesAnnotation.class);
+        for(CoreMap sentence: sentences) {
+            // Iterate over all tokens in a sentence
+            for (CoreLabel token: sentence.get(TokensAnnotation.class)) {
+                // Retrieve and add the lemma for each word into the list of lemmas
+				//lemmas.add(token.get(LemmaAnnotation.class));
+				String lemme = token.lemma(); //get(LemmaAnnotation.class);
+				String posTag = token.tag();
+				Word w = new Word(lemme, posTag);
+				mySentence.addWord(w);
+            }
+        }
+		System.out.println(mySentence.toString());
+	}
+
+	private int sentenceCount;
+
+	private void processLine(String line){
+		if(line.charAt(0) == '#'){
+			//The line is a sense definition
+
+		}else{
+			String[] words = line.split(" ");
+			int index = -1;
+			try{
+				index = Integer.parseInt(words[0]);
+			}catch(NumberFormatException nfe){
+				index = -1;
+			}
+			if(index < 0){
+				//The line is a new sentence
+				inputSentence(line);
+				sentenceCount++;
+			}else{
+				//The line is the index of the ambiguous word
+
+			}
+		}
+	}
+
 	/**
 	 * TODO:
 	 * Read in sentences and ambiguous words in a test corpus to fill the data structures testCorpus,
@@ -106,6 +210,21 @@ public class Lesk {
 	 * @param filename
 	 */
 	public void readTestData(String filename) throws Exception {
+		sentenceCount = 0;
+
+		try {
+			BufferedReader br = new BufferedReader(new FileReader(filename));
+			String line = br.readLine();
+			while (line != null) {
+				processLine(line);
+				line = br.readLine();
+			}
+			br.close();
+		}catch(FileNotFoundException fnfe){
+			fnfe.printStackTrace();
+		}catch(IOException ioe){
+			ioe.printStackTrace();
+		}
 	}
 	
 	/**
@@ -177,6 +296,7 @@ public class Lesk {
 	 * @param sim_option: one of {COSINE, JACCARD}
 	 */
 	public void predict(String context_option, int window_size, String sim_option) {
+		
 	}
 	
 
@@ -226,15 +346,26 @@ public class Lesk {
 		return null;
 	}
 
-	/**
-	 * @param args[0] file name of a test corpus
-	 */
-	public static void main(String[] args) {
+	private static void setup(){
+		wordnetdict = initDictionary();
+		if(wordnetdict == null){
+			System.out.println("ERROR reading dictionary");
+			return;
+		}
+
+		stopwords = readStopWords();
+		if(stopwords == null){
+			System.out.println("ERROR reading stopwords");
+			return;
+		}
+	}
+
+	private static void processFile(String filename){
 		Lesk model = new Lesk();
 		try {
-			model.readTestData(args[0]);
+			model.readTestData(filename);
 		} catch (Exception e) {
-			System.out.println(args[0]);
+			System.out.println(filename);
 			e.printStackTrace();
 		}
 		String context_opt = "ALL_WORDS";
@@ -244,12 +375,28 @@ public class Lesk {
 		model.predict(context_opt, window_size, sim_opt);
 		
 		ArrayList<Double> res = model.evaluate(1);
-		System.out.print(args[0]);
+		System.out.print(filename);
 		System.out.print("\t");
-		System.out.print(res.get(0));
-		System.out.print("\t");
-		System.out.print(res.get(1));
-		System.out.print("\t");
-		System.out.println(res.get(2));
+		if(res != null){
+			System.out.print("\t");
+			System.out.print(res.get(0));
+			System.out.print("\t");
+			System.out.print(res.get(1));
+			System.out.print("\t");
+			System.out.println(res.get(2));
+		}else{
+			System.out.print("Incomplete algorithm.");
+			System.out.print("\t\n");
+		}
+	}
+
+	/**
+	 * @param args[0] file name of a test corpus
+	 */
+	public static void main(String[] args) {
+		setup();
+		for(String file : args){
+			processFile(file);
+		}
 	}
 }
