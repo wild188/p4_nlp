@@ -71,7 +71,7 @@ public class Lesk {
 	
 	private static IDictionary wordnetdict;
 	
-	private StanfordCoreNLP pipeline;
+	private static StanfordCoreNLP pipeline;
 
 	private static Set<String> stopwords;
 	
@@ -118,13 +118,7 @@ public class Lesk {
 		return out;
 	}
 
-	/**
-	 * TODO:
-	 * The constructor initializes any WordNet/NLP tools and reads the stopwords.
-	 */
-	public Lesk() {
-		//Dictionary and stopwords already done statically
-
+	private static StanfordCoreNLP initPipeline(){
 		// Create StanfordCoreNLP object properties, with POS tagging
         // (required for lemmatization), and lemmatization
         Properties props;
@@ -133,7 +127,18 @@ public class Lesk {
 
         // StanfordCoreNLP loads a lot of models, so you probably
         // only want to do this once per execution
-        this.pipeline = new StanfordCoreNLP(props);
+		//pipeline = new StanfordCoreNLP(props);
+		return new StanfordCoreNLP(props);
+	}
+
+	/**
+	 * TODO:
+	 * The constructor initializes any WordNet/NLP tools and reads the stopwords.
+	 */
+	public Lesk() {
+		//Dictionary, stopwords, and the NLP pipeline are already done statically
+
+		
 	}
 	
 	/**
@@ -162,7 +167,8 @@ public class Lesk {
 		//from cricket_007 and chris on stack overflow
 
 		// Iterate over all of the sentences found
-        List<CoreMap> sentences = annotation.get(SentencesAnnotation.class);
+		List<CoreMap> sentences = annotation.get(SentencesAnnotation.class);
+		//if(sentences.size() > 1) System.out.println("Sentence split: " + line);
         for(CoreMap sentence: sentences) {
             // Iterate over all tokens in a sentence
             for (CoreLabel token: sentence.get(TokensAnnotation.class)) {
@@ -174,30 +180,74 @@ public class Lesk {
 				mySentence.addWord(w);
             }
         }
-		System.out.println(mySentence.toString());
+		//System.out.println(mySentence.toString());
+		testCorpus.add(mySentence);
 	}
 
-	private int sentenceCount;
+	private void processSense(String line){
+		String[] words = line.split(" ");
+		int index = -1;
+		try{
+			index = Integer.parseInt(words[0]);
+		}catch(NumberFormatException nfe){
+			index = -1;
+			return;
+		}
+		ambiguousLocations.get(sentenceIndex).add(index);
+		if(words.length < 4){
+			System.out.println("Not enough sense information: " + line);
+			return;
+		}
+		Sentence x = testCorpus.get(sentenceIndex);
+		String lemma = words[1];
+		try{
+			lemma = x.getWordAt(index).getLemme();
+		}catch(NullPointerException npe){
+			System.out.println(x.toString());
+			System.out.println("Sentence #: " + sentenceIndex + " word Index: " + index);
+			npe.printStackTrace();
+		}
+		
+		//System.out.println(testCorpus.size() + " expected:  " + sentenceIndex);
+		Pair<String, String> wordPOS = new Pair<String,String>(lemma, words[2]);
+		ambiguousWords.get(sentenceIndex).add(wordPOS);
+
+		groundTruths.get(sentenceIndex).add(words[3]);
+	}
+
+	private int sentenceIndex;
+	private boolean newSentence;
 
 	private void processLine(String line){
 		if(line.charAt(0) == '#'){
-			//The line is a sense definition
-
+			//The line is a sense definition of a particular ambiguous word
+			processSense(line.substring(1));
+			newSentence = false;
 		}else{
 			String[] words = line.split(" ");
-			int index = -1;
+			int numAmbiguous = -1;
 			try{
-				index = Integer.parseInt(words[0]);
+				numAmbiguous = Integer.parseInt(words[0]);
 			}catch(NumberFormatException nfe){
-				index = -1;
+				numAmbiguous = -1;
 			}
-			if(index < 0){
+			if(numAmbiguous < 0 || words.length > 1 ){
 				//The line is a new sentence
 				inputSentence(line);
-				sentenceCount++;
+				// if(ambiguousLocations.get(sentenceCount).size() > 1)
+				// 	System.out.println(ambiguousLocations.get(sentenceCount).size());
+				newSentence = true;
+				sentenceIndex++;
+				ambiguousWords.add(new ArrayList<Pair<String, String>>());
+				//System.out.println("New Sentence");
 			}else{
-				//The line is the index of the ambiguous word
-
+				//The line is the number of the ambiguous words in the sentence
+				if(newSentence){
+					ambiguousLocations.add(new ArrayList<Integer>(numAmbiguous));
+					groundTruths.add(new ArrayList<String>(numAmbiguous));
+				}
+					
+				newSentence = false;
 			}
 		}
 	}
@@ -212,11 +262,13 @@ public class Lesk {
 	 * @param filename
 	 */
 	public void readTestData(String filename) throws Exception {
-		sentenceCount = 0;
-
+		sentenceIndex = -1;
+		newSentence = false;
+		ambiguousLocations.add(new ArrayList<Integer>());
 		try {
 			BufferedReader br = new BufferedReader(new FileReader(filename));
 			String line = br.readLine();
+			//System.out.println(line);
 			while (line != null) {
 				processLine(line);
 				line = br.readLine();
@@ -348,18 +400,26 @@ public class Lesk {
 		return null;
 	}
 
-	private static void setup(){
+	private static boolean setup(){
 		wordnetdict = initDictionary();
 		if(wordnetdict == null){
 			System.out.println("ERROR reading dictionary");
-			return;
+			return false;
 		}
 
 		stopwords = readStopWords();
 		if(stopwords == null){
 			System.out.println("ERROR reading stopwords");
-			return;
+			return false;
 		}
+
+		pipeline = initPipeline();
+		if(pipeline == null){
+			System.out.println("ERROR setting up NLP pipeline");
+			return false;
+		}
+
+		return true;
 	}
 
 	private static void processFile(String filename){
@@ -396,9 +456,10 @@ public class Lesk {
 	 * @param args[0] file name of a test corpus
 	 */
 	public static void main(String[] args) {
-		setup();
-		for(String file : args){
-			processFile(file);
+		if(setup()){
+			for(String file : args){
+				processFile(file);
+			}
 		}
 	}
 }
