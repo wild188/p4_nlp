@@ -20,6 +20,8 @@ import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.logging.RedwoodConfiguration;
 
 //import edu.stanford.nlp.ling.CoreAnnotations.LemmaAnnotation;
+import edu.stanford.nlp.pipeline.*;
+//import java.util.*;
 
 public class Lesk {
 
