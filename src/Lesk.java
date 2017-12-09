@@ -8,6 +8,8 @@ import javafx.util.Pair;
 import edu.mit.jwi.*;
 import edu.mit.jwi.Dictionary;
 import edu.mit.jwi.item.*; 
+import edu.mit.jwi.item.POS;
+import edu.mit.jwi.data.parse.SenseKeyParser;
 
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreAnnotations.SentencesAnnotation;
@@ -67,7 +69,7 @@ public class Lesk {
 	
 	/* This section contains the NLP tools */
 	
-	private static final Set<String> POS = new HashSet<String>(Arrays.asList("ADJECTIVE", "ADVERB", "NOUN", "VERB"));
+	private static final Set<String> POSstrings = new HashSet<String>(Arrays.asList("ADJECTIVE", "ADVERB", "NOUN", "VERB"));
 	
 	private static IDictionary wordnetdict;
 	
@@ -152,6 +154,8 @@ public class Lesk {
 			return "ADJECTIVE";
 		} else if (pos.equals("ADV")) {
 			return "ADVERB";
+		} else if (pos.equals("CONJ")) { //Billy added
+			return "ADVERB";
 		} else if (pos.equals("NOUN") || pos.equals("VERB")) {
 			return pos;
 		} else {
@@ -208,7 +212,6 @@ public class Lesk {
 			npe.printStackTrace();
 		}
 		
-		//System.out.println(testCorpus.size() + " expected:  " + sentenceIndex);
 		Pair<String, String> wordPOS = new Pair<String,String>(lemma, words[2]);
 		ambiguousWords.get(sentenceIndex).add(wordPOS);
 
@@ -234,8 +237,6 @@ public class Lesk {
 			if(numAmbiguous < 0 || words.length > 1 ){
 				//The line is a new sentence
 				inputSentence(line);
-				// if(ambiguousLocations.get(sentenceCount).size() > 1)
-				// 	System.out.println(ambiguousLocations.get(sentenceCount).size());
 				newSentence = true;
 				sentenceIndex++;
 				ambiguousWords.add(new ArrayList<Pair<String, String>>());
@@ -246,7 +247,6 @@ public class Lesk {
 					ambiguousLocations.add(new ArrayList<Integer>(numAmbiguous));
 					groundTruths.add(new ArrayList<String>(numAmbiguous));
 				}
-					
 				newSentence = false;
 			}
 		}
@@ -302,7 +302,53 @@ public class Lesk {
 	 * 
 	 */
 	private Map<String, Pair<String, Integer> > getSignatures(String lemma, String pos_name) {
-		return null;
+		IIndexWord idxWord;
+		try{
+			idxWord = wordnetdict.getIndexWord(lemma, POS.valueOf(toJwiPOS(pos_name)));
+		}catch(Exception e){
+			System.out.println("Lemma: " + lemma + " POS: " + pos_name);
+			e.printStackTrace();
+			return null;
+		}
+		
+		List<IWord> senses = new ArrayList<IWord>();
+
+		Map<String, Pair<String, Integer> > signatures = new HashMap<String, Pair<String, Integer> >();
+
+		if (idxWord != null)
+		{
+			for (IWordID senseID : idxWord.getWordIDs()){
+				senses.add(wordnetdict.getWord(senseID));
+
+				IWord word = wordnetdict.getWord(senseID);
+				ISynset synset = word.getSynset();
+				ISenseKey senseKey = word.getSenseKey();
+				String gloss = synset.getGloss();
+				Integer frequency = wordnetdict.getSenseEntry(senseKey).getTagCount();
+				Pair<String, Integer> signature = new Pair<String,Integer>(gloss, frequency);
+				signatures.put(senseKey.toString(), signature);
+				//System.out.println("word: " + word.toString() + " synset: " + synset.toString() + " senseKey: " + senseKey.toString());
+			}
+		}
+		//System.out.println(senses.toString());
+
+		// List<ISynsetID> list = new ArrayList<ISynsetID>();
+		
+		// IIndexWord idxWordNoun = wordnetdict.getIndexWord("car", POS.NOUN);//POS.valueOf(pos_name));
+		// if (idxWordNoun != null) {
+			
+		// 	List<IWordID> listWordNoun = idxWordNoun.getWordIDs();
+								
+		// 	for(Iterator<IWordID> ite = listWordNoun.iterator(); ite.hasNext();){
+		// 		IWordID wordID1 = ite.next();
+		// 		IWord word = wordnetdict.getWord(wordID1);
+		// 		ISynset synset = word.getSynset();
+		// 		list.addAll(synset.getRelatedSynsets());
+		// 	}
+		// }
+		//System.out.println(list.toString());
+		
+		return signatures;
 	}
 	
 	/**
@@ -350,7 +396,25 @@ public class Lesk {
 	 * @param sim_option: one of {COSINE, JACCARD}
 	 */
 	public void predict(String context_option, int window_size, String sim_option) {
-		
+		//getSignatures("own", "ADJ");
+		// ISenseKey sk = SenseKeyParser.getInstance().parseLine("once%4:02:02::");
+
+		// IWord word = wordnetdict.getWord(sk);
+		// System.out.println(word.getPOS());
+
+		for(int i = 0; i < testCorpus.size(); i++){
+			Sentence sentence = testCorpus.get(i);
+			ArrayList<Pair<String, String>> aWords = ambiguousWords.get(i);
+			for(int j = 0; j < aWords.size(); j++){
+				Pair<String, String> wordPOS = aWords.get(j);
+				if(wordPOS.getKey() == null || wordPOS.getValue() == null){
+					System.out.println(sentence.getWordAt(ambiguousLocations.get(i).get(j)));
+					continue;
+				}
+				Map<String, Pair<String, Integer> > signatures = getSignatures(wordPOS.getKey(), wordPOS.getValue());
+
+			}
+		}
 	}
 	
 
