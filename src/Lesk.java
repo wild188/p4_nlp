@@ -71,6 +71,11 @@ public class Lesk {
 	
 	private static final Set<String> POSstrings = new HashSet<String>(Arrays.asList("ADJECTIVE", "ADVERB", "NOUN", "VERB"));
 	
+	private static final String ALL_WORDS = "ALL_WORDS";
+	private static final String ALL_WORDS_R = "ALL_WORDS_R";
+	private static final String WINDOW = "WINDOW";
+	private static final String _POS = "POS";
+
 	private static IDictionary wordnetdict;
 	
 	private static StanfordCoreNLP pipeline;
@@ -154,9 +159,17 @@ public class Lesk {
 			return "ADJECTIVE";
 		} else if (pos.equals("ADV")) {
 			return "ADVERB";
-		} else if (pos.equals("CONJ")) { //Billy added
-			return "ADVERB";
-		} else if (pos.equals("NOUN") || pos.equals("VERB")) {
+		} 
+		// else if (pos.equals("CONJ")) { //Billy added
+		// 	return "ADVERB";
+		// } else if (pos.equals("PRON")) { //Billy added
+		// 	return "NOUN";
+		// } else if (pos.equals("ADP")) { //Billy added
+		// 	return "ADJECTIVE";
+		// } else if (pos.equals("CONJ")) { //Billy added
+		// 	return "ADVERB";
+		// } 
+		else if (pos.equals("NOUN") || pos.equals("VERB")) {
 			return pos;
 		} else {
 			return null;
@@ -197,6 +210,9 @@ public class Lesk {
 			index = -1;
 			return;
 		}
+		if(toJwiPOS(words[2]) == null) return; //skip not adj, noun, verbs
+
+
 		ambiguousLocations.get(sentenceIndex).add(index);
 		if(words.length < 4){
 			System.out.println("Not enough sense information: " + line);
@@ -312,7 +328,6 @@ public class Lesk {
 		}
 		
 		List<IWord> senses = new ArrayList<IWord>();
-
 		Map<String, Pair<String, Integer> > signatures = new HashMap<String, Pair<String, Integer> >();
 
 		if (idxWord != null)
@@ -330,27 +345,22 @@ public class Lesk {
 				//System.out.println("word: " + word.toString() + " synset: " + synset.toString() + " senseKey: " + senseKey.toString());
 			}
 		}
-		//System.out.println(senses.toString());
-
-		// List<ISynsetID> list = new ArrayList<ISynsetID>();
-		
-		// IIndexWord idxWordNoun = wordnetdict.getIndexWord("car", POS.NOUN);//POS.valueOf(pos_name));
-		// if (idxWordNoun != null) {
-			
-		// 	List<IWordID> listWordNoun = idxWordNoun.getWordIDs();
-								
-		// 	for(Iterator<IWordID> ite = listWordNoun.iterator(); ite.hasNext();){
-		// 		IWordID wordID1 = ite.next();
-		// 		IWord word = wordnetdict.getWord(wordID1);
-		// 		ISynset synset = word.getSynset();
-		// 		list.addAll(synset.getRelatedSynsets());
-		// 	}
-		// }
-		//System.out.println(list.toString());
 		
 		return signatures;
 	}
 	
+	private ArrayList<String> removeStopWords(ArrayList<String> original){
+		int max = original.size();
+		for(int i = 0; i < max ; i++){
+			if(stopwords.contains(original.get(i))){
+				original.remove(i);
+				i--;
+				max--;
+			}
+		}
+		return original;
+	}
+
 	/**
 	 * TODO:
 	 * Convert a String object, usually representing one or more sentences, to a bag-of-words.
@@ -361,10 +371,68 @@ public class Lesk {
 	 * @param str: input string
 	 * @return a list of strings (words, punctuation, etc.)
 	 */
-	private ArrayList<String> str2bow(String str) {
-		return null;
+	private ArrayList<String> str2bow(String str, String context_option) {
+		ArrayList<String> bow = new ArrayList<String>();
+		Annotation annotation = new Annotation(str);
+		this.pipeline.annotate(annotation);
+
+
+		//from cricket_007 and chris on stack overflow
+
+		// Iterate over all of the sentences found
+		List<CoreMap> sentences = annotation.get(SentencesAnnotation.class);
+
+		for (CoreMap sentence : sentences) {
+			// Iterate over all tokens in a sentence
+			for (CoreLabel token : sentence.get(TokensAnnotation.class)) {
+				// Retrieve and add the lemma for each word into the list of lemmas
+				String lemme = token.lemma();
+				lemme = lemme.toLowerCase();
+				// String posTag = token.tag();
+				// Word w = new Word(lemme, posTag);
+				String alphanumaric = "^[a-zA-Z0-9]*$";
+				if(lemme.matches(alphanumaric))
+					bow.add(lemme);
+			}
+		}
+		if(context_option.equals(ALL_WORDS_R)){
+			bow = removeStopWords(bow);
+		}
+		//System.out.println(bow.toString());
+		return bow;
 	}
 	
+	private ArrayList<String> getContext(Sentence sentence, String context_option, int window_size, int targetIndex) {
+		ArrayList<String> bow = sentence.getAllWords();
+		int max = bow.size();
+		for(int i = 0; i < max; i++){
+			String word = bow.get(i);
+			String alphanumaric = "^[a-zA-Z0-9]*$";
+			if(word.matches(alphanumaric)){
+				bow.remove(i);
+				bow.add(i, word.toLowerCase());
+			}else{
+				bow.remove(i);
+				i--;
+				max--;
+			}	
+		}
+		if(context_option.equals(ALL_WORDS_R)){
+			bow = removeStopWords(bow);
+		}else if(context_option.equals(WINDOW) && targetIndex >=0 && targetIndex < bow.size()){
+			int radius = (window_size - 1) / 2;
+			int low = targetIndex - radius;
+			low = low < 0 ? 0 : low;
+			int high = targetIndex + radius + 1; //Accounts for exclusive subArray
+			high = high > bow.size() ? bow.size(): high;
+			bow = new ArrayList<String>(bow.subList(low, high));
+		}else if(context_option.equals(_POS)){
+			//Not implemented
+		}
+		//System.out.println(bow.toString());
+		return bow;
+	}
+
 	/**
 	 * TODO:
 	 * Computes a similarity score between two bags-of-words. Use one of the above options 
@@ -377,6 +445,17 @@ public class Lesk {
 	 * @return similarity score
 	 */
 	private double similarity(ArrayList<String> bag1, ArrayList<String> bag2, String sim_opt) {
+		if(sim_opt.equals("JACCARD")){
+			int intersection = 0;
+			HashSet<String> contains = new HashSet<String>(bag2);
+			for(String word : bag1){
+				if(contains.contains(word))
+					intersection++;
+			}
+			int union = bag1.size() + bag2.size() - intersection;
+			return intersection / union;
+		}
+		
 		return 0;
 	}
 	
@@ -401,19 +480,40 @@ public class Lesk {
 
 		// IWord word = wordnetdict.getWord(sk);
 		// System.out.println(word.getPOS());
-
+		
 		for(int i = 0; i < testCorpus.size(); i++){
 			Sentence sentence = testCorpus.get(i);
 			ArrayList<Pair<String, String>> aWords = ambiguousWords.get(i);
+			ArrayList<Integer> locations =  ambiguousLocations.get(i);
+			ArrayList<HashMap<String, Double>> sentencePredictions = new ArrayList<HashMap<String, Double>>(testCorpus.size());
 			for(int j = 0; j < aWords.size(); j++){
 				Pair<String, String> wordPOS = aWords.get(j);
 				if(wordPOS.getKey() == null || wordPOS.getValue() == null){
 					System.out.println(sentence.getWordAt(ambiguousLocations.get(i).get(j)));
 					continue;
 				}
-				Map<String, Pair<String, Integer> > signatures = getSignatures(wordPOS.getKey(), wordPOS.getValue());
+				Map<String, Pair<String, Integer> > senses = getSignatures(wordPOS.getKey(), wordPOS.getValue());
+				int targetIndex = locations.get(j);
+				ArrayList<String> context = getContext(sentence, context_option, window_size, targetIndex);
+				String[] senseIterator = senses.keySet().toArray(new String[0]);
+				double maxSim = 0;
+				int maxIndex = 0;
+				HashMap<String, Double> senseMap = new HashMap<String, Double>();
+				for(int k = 0; k < senseIterator.length; k++){
+					Pair<String, Integer> sense = senses.get(senseIterator[k]);
+					ArrayList<String> signature = str2bow(sense.getKey(), context_option);
+					double sim = similarity(context, signature, sim_option);
+					senseMap.put(senseIterator[k], sim);
+					if(maxSim < sim){
+						maxSim = sim;
+						maxIndex = k;
+					}
+				}
 
+				//Record predictions
+				sentencePredictions.add(senseMap);
 			}
+			this.predictions.add(sentencePredictions);
 		}
 	}
 	
@@ -450,6 +550,7 @@ public class Lesk {
 	 * @return a list of [top K precision, top K recall, top K F1]
 	 */
 	private ArrayList<Double> evaluate(ArrayList<String> groundTruths, HashMap<String, Double> predictions, int K) {
+		
 		return null;
 	}
 	
