@@ -169,8 +169,17 @@ public class Lesk {
 	 */
 	public Lesk() {
 		//Dictionary, stopwords, and the NLP pipeline are already done statically
-
-		
+		//String[] x = {"hello", "goodbye"};
+		//String[] y = {"hello", "kitty"};
+		// ArrayList<String> bag1 = new ArrayList<String>();
+		// bag1.add("hello");
+		// bag1.add("goodbye");
+		// ArrayList<String> bag2 = new ArrayList<String>();
+		// bag2.add("hello");
+		// bag2.add("kitty");
+		// double sim = similarity(bag1, bag2, "JACCARD");
+		// System.out.println(sim);
+		// System.exit(1);
 	}
 	
 	/**
@@ -473,14 +482,25 @@ public class Lesk {
 		if(sim_opt.equals("JACCARD")){
 			int intersection = 0;
 			HashSet<String> contains = new HashSet<String>(bag2);
-			System.out.println(bag1.toString());
-			System.out.println(contains.toString());
+			//System.out.println(bag1.toString());
+			//System.out.println(contains.toString());
 			for(String word : bag1){
-				if(contains.contains(word))
+				if(contains.contains(word)){
 					intersection++;
+					//System.out.println("Intersection = " + intersection);
+				}else{
+					//System.out.println(word + " != " + bag2.get(0) + " || " + bag2.get(1));
+				}
 			}
 			int union = bag1.size() + bag2.size() - intersection;
-			return intersection / union;
+			return intersection / (double)union;
+		}else if(sim_opt.equals("COSINE")){
+			//TODO
+			return 1;
+		}else if(sim_opt.equals("NAIVE")){
+			//Will default to most frequent sense. This is the base line
+			//Average		0.6123162098808664	0.30306689286977656	0.3693343514114866
+			return 0;
 		}
 		System.out.println("ERROR!!!");
 		return 0;
@@ -537,7 +557,7 @@ public class Lesk {
 					boolean added = false;
 					for(int h = 0; h < wordPredictions.size(); h++){
 						if(SenseScore.compare(ss, wordPredictions.get(h)) > 0 ){
-							System.out.println("int " + ss.toString() +" > " + wordPredictions.get(h).toString());
+							//System.out.println("int " + ss.toString() +" > " + wordPredictions.get(h).toString());
 							wordPredictions.add(h, ss);
 							added = true;
 							
@@ -546,7 +566,7 @@ public class Lesk {
 					}
 					if(!added){
 						wordPredictions.add(ss);
-						System.out.println("end " + ss.toString() +" < everything");
+						//System.out.println("end " + ss.toString() +" < everything");
 						//System.out.println("Adding on fre " + ss.senseKey);
 					} 
 					// senseMap.put(senseIterator[k], sim);
@@ -737,34 +757,42 @@ public class Lesk {
 		return true;
 	}
 
-	private static void processFile(String filename){
+	private static void printResults(ArrayList<Double> results, String filename){
+		System.out.print(filename);
+		System.out.print("\t");
+		if(results != null || results.size() < 3){
+			System.out.print("\t");
+			System.out.print(results.get(0));
+			System.out.print("\t");
+			System.out.print(results.get(1));
+			System.out.print("\t");
+			System.out.println(results.get(2));
+			
+			
+		}else{
+			System.out.print("Incomplete algorithm.");
+			System.out.print("\t\n");
+		}
+	}
+
+	private static ArrayList<Double> processFile(String filename){
 		Lesk model = new Lesk();
 		try {
 			model.readTestData(filename);
 		} catch (Exception e) {
 			System.out.println(filename);
 			e.printStackTrace();
+			return null;
 		}
-		String context_opt = "ALL_WORDS";
+		String context_opt = "WINDOW";
 		int window_size = 3;
 		String sim_opt = "JACCARD";
 		
 		model.predict(context_opt, window_size, sim_opt);
 		
 		ArrayList<Double> res = model.evaluate(1);
-		System.out.print(filename);
-		System.out.print("\t");
-		if(res != null){
-			System.out.print("\t");
-			System.out.print(res.get(0));
-			System.out.print("\t");
-			System.out.print(res.get(1));
-			System.out.print("\t");
-			System.out.println(res.get(2));
-		}else{
-			System.out.print("Incomplete algorithm.");
-			System.out.print("\t\n");
-		}
+		printResults(res, filename);
+		return res;
 	}
 
 	/**
@@ -772,9 +800,25 @@ public class Lesk {
 	 */
 	public static void main(String[] args) {
 		if(setup()){
+			int normalizer = args.length;
+			double[] results = new double[3];
 			for(String file : args){
-				processFile(file);
+				ArrayList<Double> res = processFile(file);
+				if(res != null && res.size() == 3){
+					results[0] += res.get(0);
+					results[1] += res.get(1);
+					results[2] += res.get(2);
+				}else{
+					normalizer--;
+				}
+				
 			}
+			ArrayList<Double> avg = new ArrayList<Double>(3);
+			avg.add(results[0] / (double)normalizer);
+			avg.add(results[1] / (double)normalizer);
+			avg.add(results[2] / (double)normalizer);
+
+			printResults(avg, "Average");
 		}
 	}
 }
