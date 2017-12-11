@@ -25,6 +25,31 @@ import edu.stanford.nlp.util.logging.RedwoodConfiguration;
 import edu.stanford.nlp.pipeline.*;
 //import java.util.*;
 
+class SenseScore {
+	public String senseKey;
+	public int frequency;
+	public double simScore;
+
+	public SenseScore(String senseKey, int frequency, double simScore){
+		this.senseKey = senseKey;
+		this.frequency = frequency;
+		this.simScore = simScore;
+	}
+
+	@Override
+	public String toString(){
+		return senseKey + " : frequency = " + frequency + " SimScore = " + simScore;
+	}
+
+	public static int compare(SenseScore a, SenseScore b){
+		int simComp = Double.compare(a.simScore, b.simScore);
+		if(simComp == 0){
+			return Integer.compare(a.frequency, b.frequency);
+		}
+		return simComp;
+	}
+}
+
 public class Lesk {
 
 	/** 
@@ -56,7 +81,7 @@ public class Lesk {
 	 * E.g.,
 	 * 		predictions.get(1) = [{take%2:30:01:: -> 0.9, take%2:38:09:: -> 0.1}, {apply%2:40:00:: -> 0.1}]
 	 */
-	private ArrayList<ArrayList<HashMap<String, Double> > > predictions = new ArrayList<ArrayList<HashMap<String, Double> > >();
+	private ArrayList<ArrayList<ArrayList<SenseScore>>> predictions = new ArrayList<ArrayList<ArrayList<SenseScore> > >();
 	
 	/**
 	 * Each entry is a list of ground truth senses for the ambiguous locations.
@@ -448,6 +473,8 @@ public class Lesk {
 		if(sim_opt.equals("JACCARD")){
 			int intersection = 0;
 			HashSet<String> contains = new HashSet<String>(bag2);
+			System.out.println(bag1.toString());
+			System.out.println(contains.toString());
 			for(String word : bag1){
 				if(contains.contains(word))
 					intersection++;
@@ -455,7 +482,7 @@ public class Lesk {
 			int union = bag1.size() + bag2.size() - intersection;
 			return intersection / union;
 		}
-		
+		System.out.println("ERROR!!!");
 		return 0;
 	}
 	
@@ -485,7 +512,8 @@ public class Lesk {
 			Sentence sentence = testCorpus.get(i);
 			ArrayList<Pair<String, String>> aWords = ambiguousWords.get(i);
 			ArrayList<Integer> locations =  ambiguousLocations.get(i);
-			ArrayList<HashMap<String, Double>> sentencePredictions = new ArrayList<HashMap<String, Double>>(testCorpus.size());
+			//ArrayList<HashMap<String, Double>> sentencePredictions = new ArrayList<HashMap<String, Double>>(testCorpus.size());
+			ArrayList<ArrayList<SenseScore>> sentencePredictions = new ArrayList<ArrayList<SenseScore>>(testCorpus.size());
 			for(int j = 0; j < aWords.size(); j++){
 				Pair<String, String> wordPOS = aWords.get(j);
 				if(wordPOS.getKey() == null || wordPOS.getValue() == null){
@@ -498,20 +526,38 @@ public class Lesk {
 				String[] senseIterator = senses.keySet().toArray(new String[0]);
 				double maxSim = 0;
 				int maxIndex = 0;
-				HashMap<String, Double> senseMap = new HashMap<String, Double>();
+				//HashMap<String, Double> senseMap = new HashMap<String, Double>();
+				ArrayList<SenseScore> wordPredictions = new ArrayList<SenseScore>();
 				for(int k = 0; k < senseIterator.length; k++){
 					Pair<String, Integer> sense = senses.get(senseIterator[k]);
 					ArrayList<String> signature = str2bow(sense.getKey(), context_option);
 					double sim = similarity(context, signature, sim_option);
-					senseMap.put(senseIterator[k], sim);
-					if(maxSim < sim){
-						maxSim = sim;
-						maxIndex = k;
+					SenseScore ss = new SenseScore(senseIterator[k], sense.getValue(), sim);
+					//wordPredictions.add(ss);
+					boolean added = false;
+					for(int h = 0; h < wordPredictions.size(); h++){
+						if(SenseScore.compare(ss, wordPredictions.get(h)) > 0 ){
+							System.out.println("int " + ss.toString() +" > " + wordPredictions.get(h).toString());
+							wordPredictions.add(h, ss);
+							added = true;
+							
+							break;
+						}
 					}
+					if(!added){
+						wordPredictions.add(ss);
+						System.out.println("end " + ss.toString() +" < everything");
+						//System.out.println("Adding on fre " + ss.senseKey);
+					} 
+					// senseMap.put(senseIterator[k], sim);
+					// if(maxSim < sim){
+					// 	maxSim = sim;
+					// 	maxIndex = k;
+					// }
 				}
 
 				//Record predictions
-				sentencePredictions.add(senseMap);
+				sentencePredictions.add(wordPredictions);
 			}
 			this.predictions.add(sentencePredictions);
 		}
@@ -549,9 +595,83 @@ public class Lesk {
 	 * @param K
 	 * @return a list of [top K precision, top K recall, top K F1]
 	 */
-	private ArrayList<Double> evaluate(ArrayList<String> groundTruths, ArrayList<HashMap<String, Double>> predictions, int K) {
+	private ArrayList<Double> evaluateWord(ArrayList<String> groundTruths, ArrayList<SenseScore> predictions, int k) {
+		if(predictions == null || groundTruths == null){
+			//Error
+			System.out.println("EXTRA BAD");
+			return null;
+		}else if(groundTruths.size() == 0){
+			//Error
+			System.out.println("BAD TRUTH");
+			return null;
+		}else if(predictions.size()==0){
+			//Error
+			//System.out.println("BAD PREDICTION");
+			return null;
+		}
+		//System.out.println("---------------------------GOOD----------------------------------");
 		
-		return null;
+		int correctPredictions = 0;
+		int max = k < predictions.size() ? k : predictions.size();
+		for(int i = 0; i < max; i++){
+			if(groundTruths.contains(predictions.get(i).senseKey))
+				correctPredictions++;
+		}
+		
+		double precision = correctPredictions / (double)k;
+		double recall = correctPredictions / (double)groundTruths.size();
+
+		double f1 = 0.0;
+		if(recall != 0.0 && precision != 0.0){
+			f1 = (2.0 * precision * recall) / (precision + recall);
+			//System.out.println("F1 = " + f1 + " : " + (2.0 * precision * recall) + " / " + (precision + recall));
+		} 
+
+		ArrayList<Double> results = new ArrayList<Double>(3);
+		results.add(precision);
+		results.add(recall);
+		results.add(f1);
+
+		return results;
+
+	}
+
+	private ArrayList<Double> evaluateSentence(ArrayList<String> groundTruths, ArrayList<ArrayList<SenseScore>> predictions, int k) {
+		int size = 0;
+		if(predictions.size() == groundTruths.size()){
+			size = predictions.size();
+		}else{
+			return null;
+		}
+		
+		int normalizer = size;
+
+		double[] results = new double[3];
+		for(int i = 0; i < size; i++){
+			ArrayList<SenseScore> wordPrediction = predictions.get(i);
+			ArrayList<String> gTruth = parseSenseKeys(groundTruths.get(i));
+			ArrayList<Double> wordResults = evaluateWord(gTruth, wordPrediction, k);
+
+			if(wordResults != null && wordResults.size() == 3){
+				results[0] += wordResults.get(0);
+				results[1] += wordResults.get(1);
+				results[2] += wordResults.get(2);
+			}else{
+				//error
+				normalizer--;
+			}
+		}
+
+		if(normalizer <= 0){
+			return null;
+		}
+
+		ArrayList<Double> out = new ArrayList<Double>(3);
+		out.add(results[0] / (double)normalizer);
+		out.add(results[1] / (double)normalizer);
+		out.add(results[2] / (double)normalizer);
+		return out;
+
 	}
 	
 	/**
@@ -568,21 +688,30 @@ public class Lesk {
 		}else{
 			return null;
 		}
+
+		int normalizer = size;
 		double[] results = new double[3];
 		for(int i = 0; i < size; i++){
-			ArrayList<HashMap<String, Double>> sentencePrediction = this.predictions.get(i);
+			//ArrayList<HashMap<String, Double>> sentencePrediction = this.predictions.get(i);
+			ArrayList<ArrayList<SenseScore>> sentencePrediction = this.predictions.get(i);
 			ArrayList<String> gTruth = this.groundTruths.get(i);
-			ArrayList<Double> sentenceResults = evaluate(gTruth, sentencePrediction, k);
-			
+			ArrayList<Double> sentenceResults = evaluateSentence(gTruth, sentencePrediction, k);
+
+			if(sentenceResults != null && sentenceResults.size() == 3){
+				results[0] += sentenceResults.get(0);
+				results[1] += sentenceResults.get(1);
+				results[2] += sentenceResults.get(2);
+			}else{
+				//error
+				normalizer--;
+			}
 			//check overflow
-			results[0] += sentenceResults.get(0) / (double)size;
-			results[1] += sentenceResults.get(1) / (double)size;
-			results[2] += sentenceResults.get(2) / (double)size;
+			
 		}
 		ArrayList<Double> out = new ArrayList<Double>(3);
-		out.add(results[0]);
-		out.add(results[1]);
-		out.add(results[2]);
+		out.add(results[0] / (double)normalizer);
+		out.add(results[1] / (double)normalizer);
+		out.add(results[2] / (double)normalizer);
 		return out;
 	}
 
