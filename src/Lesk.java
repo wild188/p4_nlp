@@ -549,7 +549,7 @@ public class Lesk {
 	 * @param K
 	 * @return a list of [top K precision, top K recall, top K F1]
 	 */
-	private ArrayList<Double> evaluate(ArrayList<String> groundTruths, HashMap<String, Double> predictions, int K) {
+	private ArrayList<Double> evaluate(ArrayList<String> groundTruths, ArrayList<HashMap<String, Double>> predictions, int K) {
 		
 		return null;
 	}
@@ -559,10 +559,31 @@ public class Lesk {
 	 * Call the above function to calculate and then average the 3 metrics over all targets.
 	 * 
 	 * Test the prediction performance on all test sentences
-	 * @param K Top-K precision/recall/f1
+	 * @param k Top-K precision/recall/f1
 	 */
-	public ArrayList<Double> evaluate(int K) {
-		return null;
+	public ArrayList<Double> evaluate(int k) {
+		int size = 0;
+		if(this.predictions.size() == this.groundTruths.size()){
+			size = this.predictions.size();
+		}else{
+			return null;
+		}
+		double[] results = new double[3];
+		for(int i = 0; i < size; i++){
+			ArrayList<HashMap<String, Double>> sentencePrediction = this.predictions.get(i);
+			ArrayList<String> gTruth = this.groundTruths.get(i);
+			ArrayList<Double> sentenceResults = evaluate(gTruth, sentencePrediction, k);
+			
+			//check overflow
+			results[0] += sentenceResults.get(0) / (double)size;
+			results[1] += sentenceResults.get(1) / (double)size;
+			results[2] += sentenceResults.get(2) / (double)size;
+		}
+		ArrayList<Double> out = new ArrayList<Double>(3);
+		out.add(results[0]);
+		out.add(results[1]);
+		out.add(results[2]);
+		return out;
 	}
 
 	private static boolean setup(){
