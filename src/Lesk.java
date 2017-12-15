@@ -22,9 +22,12 @@ import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.logging.RedwoodConfiguration;
 
 //import edu.stanford.nlp.ling.CoreAnnotations.LemmaAnnotation;
-import edu.stanford.nlp.pipeline.*;
+//import edu.stanford.nlp.pipeline.*;
 //import java.util.*;
 
+/**
+ * Used by the Lesk algorithm to keep a sorted arraylist of the predictions
+ */
 class SenseScore {
 	public String senseKey;
 	public int frequency;
@@ -41,6 +44,10 @@ class SenseScore {
 		return senseKey + " : frequency = " + frequency + " SimScore = " + simScore;
 	}
 
+	/**
+	 * Will order SenseScores by similarity metric if there is one and teh frequency if not.
+	 * as the Lesk algorithm indicates
+	 */
 	public static int compare(SenseScore a, SenseScore b){
 		int simComp = Double.compare(a.simScore, b.simScore);
 		if(simComp == 0){
@@ -99,16 +106,18 @@ public class Lesk {
 	public static final String ALL_WORDS = "ALL_WORDS";
 	public static final String ALL_WORDS_R = "ALL_WORDS_R";
 	public static final String WINDOW = "WINDOW";
-	public static final String _POS = "POS";
+	public static final String _POS = "POS"; // not supported
 
+	// Static variables used as standard nlp libraries reduce runtime by only constructing once
 	private static IDictionary wordnetdict;
-	
 	private static StanfordCoreNLP pipeline;
-
 	private static Set<String> stopwords;
 	
+	/**
+	 * Initializes the jwi dictionary object
+	 */
 	private static IDictionary initDictionary(){
-		String path = "/home/billy/Documents/nlp/p4_nlp/data/dict";
+		String path = "./data/dict";
 		File dictFile = null;
 		dictFile = new File(path);
 		if(dictFile == null) return null;
@@ -118,6 +127,7 @@ public class Lesk {
 			dict.open();
 		} 
 		catch(IOException e){
+			System.err.println("Problem with the dictionary directory");
 			e.printStackTrace();
 			return null; 
 		}
@@ -125,8 +135,11 @@ public class Lesk {
 		return dict;
 	}
 
+	/**
+	 * Reads in stopwords from file and initializes 
+	 */
 	private static Set<String> readStopWords(){
-		String path = "/home/billy/Documents/nlp/p4_nlp/data/stopwords.txt";
+		String path = "./data/stopwords.txt";
 		Set<String> out = null;
 
 		//Based on gtonic and Knobo answer on stack overflow
@@ -140,9 +153,11 @@ public class Lesk {
 			}
 			br.close();
 		}catch(FileNotFoundException fnfe){
+			System.err.println("Stopwords file not found");
 			fnfe.printStackTrace();
 			return null;
 		}catch(IOException ioe){
+			System.err.println("Problem with the stopwords file");
 			ioe.printStackTrace();
 			return null;
 		}
@@ -150,6 +165,10 @@ public class Lesk {
 		return out;
 	}
 
+	/**
+	 * Initializes the Stanford NLP pipeline
+	 * This method was primarily found online
+	 */
 	private static StanfordCoreNLP initPipeline(){
 		// Create StanfordCoreNLP object properties, with POS tagging
         // (required for lemmatization), and lemmatization
@@ -168,18 +187,7 @@ public class Lesk {
 	 * The constructor initializes any WordNet/NLP tools and reads the stopwords.
 	 */
 	public Lesk() {
-		//Dictionary, stopwords, and the NLP pipeline are already done statically
-		//String[] x = {"hello", "goodbye"};
-		//String[] y = {"hello", "kitty"};
-		// ArrayList<String> bag1 = new ArrayList<String>();
-		// bag1.add("hello");
-		// bag1.add("goodbye");
-		// ArrayList<String> bag2 = new ArrayList<String>();
-		// bag2.add("hello");
-		// bag2.add("kitty");
-		// double sim = similarity(bag1, bag2, "JACCARD");
-		// System.out.println(sim);
-		// System.exit(1);
+		//With a single static initialization allows for a faster constructor 
 	}
 	
 	/**
@@ -210,6 +218,9 @@ public class Lesk {
 		}
 	}
 
+	/**
+	 * Inputs a single sentence line into the data structures
+	 */
 	private void inputSentence(String line){
 		Annotation annotation = new Annotation(line);
 		this.pipeline.annotate(annotation);
@@ -219,22 +230,23 @@ public class Lesk {
 
 		// Iterate over all of the sentences found
 		List<CoreMap> sentences = annotation.get(SentencesAnnotation.class);
-		//if(sentences.size() > 1) System.out.println("Sentence split: " + line);
         for(CoreMap sentence: sentences) {
             // Iterate over all tokens in a sentence
             for (CoreLabel token: sentence.get(TokensAnnotation.class)) {
                 // Retrieve and add the lemma for each word into the list of lemmas
-				//lemmas.add(token.get(LemmaAnnotation.class));
-				String lemme = token.lemma(); //get(LemmaAnnotation.class);
+				String lemme = token.lemma();
 				String posTag = token.tag();
 				Word w = new Word(lemme, posTag);
 				mySentence.addWord(w);
             }
         }
-		//System.out.println(mySentence.toString());
 		testCorpus.add(mySentence);
 	}
 
+	/**
+	 * processes a list of correct senses read in from the source file
+	 * inserts relevant data into data structures 
+	 */
 	private void processSense(String line){
 		String[] words = line.split(" ");
 		int index = -1;
@@ -271,6 +283,9 @@ public class Lesk {
 	private int sentenceIndex;
 	private boolean newSentence;
 
+	/**
+	 * Processes a single line from the source file
+	 */
 	private void processLine(String line){
 		if(line.charAt(0) == '#'){
 			//The line is a sense definition of a particular ambiguous word
@@ -290,7 +305,6 @@ public class Lesk {
 				newSentence = true;
 				sentenceIndex++;
 				ambiguousWords.add(new ArrayList<Pair<String, String>>());
-				//System.out.println("New Sentence");
 			}else{
 				//The line is the number of the ambiguous words in the sentence
 				if(newSentence){
@@ -376,13 +390,15 @@ public class Lesk {
 				Integer frequency = wordnetdict.getSenseEntry(senseKey).getTagCount();
 				Pair<String, Integer> signature = new Pair<String,Integer>(gloss, frequency);
 				signatures.put(senseKey.toString(), signature);
-				//System.out.println("word: " + word.toString() + " synset: " + synset.toString() + " senseKey: " + senseKey.toString());
 			}
 		}
 		
 		return signatures;
 	}
 	
+	/**
+	 * Removes stop words from the given String list
+	 */
 	private ArrayList<String> removeStopWords(ArrayList<String> original){
 		int max = original.size();
 		for(int i = 0; i < max ; i++){
@@ -436,6 +452,9 @@ public class Lesk {
 		return bow;
 	}
 	
+	/**
+	 * Gets the bag of words that represent the context
+	 */
 	private ArrayList<String> getContext(Sentence sentence, String context_option, int window_size, int targetIndex) {
 		ArrayList<String> bow = sentence.getAllWords();
 		int max = bow.size();
@@ -463,27 +482,27 @@ public class Lesk {
 		}else if(context_option.equals(_POS)){
 			//Not implemented
 		}
-		//System.out.println(bow.toString());
 		return bow;
 	}
 
+	/**
+	 * Jaccard similarity function
+	 */
 	private double jaccardSimilarity(ArrayList<String> bag1, ArrayList<String> bag2) {
 		int intersection = 0;
 		HashSet<String> contains = new HashSet<String>(bag2);
-		//System.out.println(bag1.toString());
-		//System.out.println(contains.toString());
 		for (String word : bag1) {
 			if (contains.contains(word)) {
 				intersection++;
-				//System.out.println("Intersection = " + intersection);
-			} else {
-				//System.out.println(word + " != " + bag2.get(0) + " || " + bag2.get(1));
 			}
 		}
 		int union = bag1.size() + bag2.size() - intersection;
 		return intersection / (double) union;
 	}
 
+	/**
+	 * Cosine similarity function 
+	 */
 	private double cosineSimilarity(ArrayList<String> bag1, ArrayList<String> bag2) {
 		int dotproduct = 0;
 		HashSet<String> contains = new HashSet<String>(bag2);
@@ -538,17 +557,10 @@ public class Lesk {
 	 * @param sim_option: one of {COSINE, JACCARD}
 	 */
 	public void predict(String context_option, int window_size, String sim_option) {
-		//getSignatures("own", "ADJ");
-		// ISenseKey sk = SenseKeyParser.getInstance().parseLine("once%4:02:02::");
-
-		// IWord word = wordnetdict.getWord(sk);
-		// System.out.println(word.getPOS());
-		
 		for(int i = 0; i < testCorpus.size(); i++){
 			Sentence sentence = testCorpus.get(i);
 			ArrayList<Pair<String, String>> aWords = ambiguousWords.get(i);
 			ArrayList<Integer> locations =  ambiguousLocations.get(i);
-			//ArrayList<HashMap<String, Double>> sentencePredictions = new ArrayList<HashMap<String, Double>>(testCorpus.size());
 			ArrayList<ArrayList<SenseScore>> sentencePredictions = new ArrayList<ArrayList<SenseScore>>(testCorpus.size());
 			for(int j = 0; j < aWords.size(); j++){
 				Pair<String, String> wordPOS = aWords.get(j);
@@ -562,18 +574,15 @@ public class Lesk {
 				String[] senseIterator = senses.keySet().toArray(new String[0]);
 				double maxSim = 0;
 				int maxIndex = 0;
-				//HashMap<String, Double> senseMap = new HashMap<String, Double>();
 				ArrayList<SenseScore> wordPredictions = new ArrayList<SenseScore>();
 				for(int k = 0; k < senseIterator.length; k++){
 					Pair<String, Integer> sense = senses.get(senseIterator[k]);
 					ArrayList<String> signature = str2bow(sense.getKey(), context_option);
 					double sim = similarity(context, signature, sim_option);
 					SenseScore ss = new SenseScore(senseIterator[k], sense.getValue(), sim);
-					//wordPredictions.add(ss);
 					boolean added = false;
 					for(int h = 0; h < wordPredictions.size(); h++){
 						if(SenseScore.compare(ss, wordPredictions.get(h)) > 0 ){
-							//System.out.println("int " + ss.toString() +" > " + wordPredictions.get(h).toString());
 							wordPredictions.add(h, ss);
 							added = true;
 							
@@ -582,14 +591,7 @@ public class Lesk {
 					}
 					if(!added){
 						wordPredictions.add(ss);
-						//System.out.println("end " + ss.toString() +" < everything");
-						//System.out.println("Adding on fre " + ss.senseKey);
 					} 
-					// senseMap.put(senseIterator[k], sim);
-					// if(maxSim < sim){
-					// 	maxSim = sim;
-					// 	maxIndex = k;
-					// }
 				}
 
 				//Record predictions
@@ -641,11 +643,8 @@ public class Lesk {
 			System.out.println("BAD TRUTH");
 			return null;
 		}else if(predictions.size()==0){
-			//Error
-			//System.out.println("BAD PREDICTION");
 			return null;
 		}
-		//System.out.println("---------------------------GOOD----------------------------------");
 		
 		int correctPredictions = 0;
 		int max = k < predictions.size() ? k : predictions.size();
@@ -660,7 +659,6 @@ public class Lesk {
 		double f1 = 0.0;
 		if(recall != 0.0 && precision != 0.0){
 			f1 = (2.0 * precision * recall) / (precision + recall);
-			//System.out.println("F1 = " + f1 + " : " + (2.0 * precision * recall) + " / " + (precision + recall));
 		} 
 
 		ArrayList<Double> results = new ArrayList<Double>(3);
@@ -672,6 +670,9 @@ public class Lesk {
 
 	}
 
+	/**
+	 * evaluates a single sentence
+	 */
 	private ArrayList<Double> evaluateSentence(ArrayList<String> groundTruths, ArrayList<ArrayList<SenseScore>> predictions, int k) {
 		int size = 0;
 		if(predictions.size() == groundTruths.size()){
@@ -728,7 +729,6 @@ public class Lesk {
 		int normalizer = size;
 		double[] results = new double[3];
 		for(int i = 0; i < size; i++){
-			//ArrayList<HashMap<String, Double>> sentencePrediction = this.predictions.get(i);
 			ArrayList<ArrayList<SenseScore>> sentencePrediction = this.predictions.get(i);
 			ArrayList<String> gTruth = this.groundTruths.get(i);
 			ArrayList<Double> sentenceResults = evaluateSentence(gTruth, sentencePrediction, k);
@@ -738,10 +738,8 @@ public class Lesk {
 				results[1] += sentenceResults.get(1);
 				results[2] += sentenceResults.get(2);
 			}else{
-				//error
 				normalizer--;
 			}
-			//check overflow
 			
 		}
 		ArrayList<Double> out = new ArrayList<Double>(3);
@@ -751,6 +749,9 @@ public class Lesk {
 		return out;
 	}
 
+	/**
+	 * Replaces constructor setup with single use static setup function
+	 */
 	private static boolean setup(){
 		wordnetdict = initDictionary();
 		if(wordnetdict == null){
@@ -773,6 +774,9 @@ public class Lesk {
 		return true;
 	}
 
+	/**
+	 * Prints results in desired format given results 
+	 */
 	private static void printResults(ArrayList<Double> results, String filename){
 		System.out.print(filename);
 		System.out.print("\t");
@@ -791,6 +795,9 @@ public class Lesk {
 		}
 	}
 
+	/**
+	 * Creates a Lesk object to process each file then prints the results to output 
+	 */
 	private static ArrayList<Double> processFile(String filename){
 		Lesk model = new Lesk();
 		try {
@@ -811,10 +818,16 @@ public class Lesk {
 		return res;
 	}
 
+	/**
+	 * Progress bar
+	 */
 	private static void progress(int cur, int max){
 		progress((double)cur, (double)max, cur == max);
 	}
 
+	/**
+	 * Progress bar
+	 */
 	private static void progress(double cur, double max, boolean done){
 		int length = 50;
 		int inc = (int)Math.round((cur/max) * length);
@@ -833,7 +846,9 @@ public class Lesk {
 	}
 
 	/**
-	 * @param args[0] file name of a test corpus
+	 * @param args[0] file names of test corpuses
+	 * Now takes in a list of corpus files as input rather than a singe one
+	 * to decrease runtime 
 	 */
 	public static void main(String[] args) {
 		if(setup()){
