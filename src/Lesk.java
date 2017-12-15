@@ -96,10 +96,10 @@ public class Lesk {
 	
 	private static final Set<String> POSstrings = new HashSet<String>(Arrays.asList("ADJECTIVE", "ADVERB", "NOUN", "VERB"));
 	
-	private static final String ALL_WORDS = "ALL_WORDS";
-	private static final String ALL_WORDS_R = "ALL_WORDS_R";
-	private static final String WINDOW = "WINDOW";
-	private static final String _POS = "POS";
+	public static final String ALL_WORDS = "ALL_WORDS";
+	public static final String ALL_WORDS_R = "ALL_WORDS_R";
+	public static final String WINDOW = "WINDOW";
+	public static final String _POS = "POS";
 
 	private static IDictionary wordnetdict;
 	
@@ -467,6 +467,36 @@ public class Lesk {
 		return bow;
 	}
 
+	private double jaccardSimilarity(ArrayList<String> bag1, ArrayList<String> bag2) {
+		int intersection = 0;
+		HashSet<String> contains = new HashSet<String>(bag2);
+		//System.out.println(bag1.toString());
+		//System.out.println(contains.toString());
+		for (String word : bag1) {
+			if (contains.contains(word)) {
+				intersection++;
+				//System.out.println("Intersection = " + intersection);
+			} else {
+				//System.out.println(word + " != " + bag2.get(0) + " || " + bag2.get(1));
+			}
+		}
+		int union = bag1.size() + bag2.size() - intersection;
+		return intersection / (double) union;
+	}
+
+	private double cosineSimilarity(ArrayList<String> bag1, ArrayList<String> bag2) {
+		int dotproduct = 0;
+		HashSet<String> contains = new HashSet<String>(bag2);
+		for (String word : bag1) {
+			if (contains.contains(word)) {
+				dotproduct++;
+			}
+		}
+		double magB1 = Math.sqrt((double)bag1.size());
+		double magB2 = Math.sqrt((double)bag2.size());
+		return (double)dotproduct / (magB1 * magB2);
+	}
+
 	/**
 	 * TODO:
 	 * Computes a similarity score between two bags-of-words. Use one of the above options 
@@ -480,29 +510,15 @@ public class Lesk {
 	 */
 	private double similarity(ArrayList<String> bag1, ArrayList<String> bag2, String sim_opt) {
 		if(sim_opt.equals("JACCARD")){
-			int intersection = 0;
-			HashSet<String> contains = new HashSet<String>(bag2);
-			//System.out.println(bag1.toString());
-			//System.out.println(contains.toString());
-			for(String word : bag1){
-				if(contains.contains(word)){
-					intersection++;
-					//System.out.println("Intersection = " + intersection);
-				}else{
-					//System.out.println(word + " != " + bag2.get(0) + " || " + bag2.get(1));
-				}
-			}
-			int union = bag1.size() + bag2.size() - intersection;
-			return intersection / (double)union;
+			return jaccardSimilarity(bag1, bag2);
 		}else if(sim_opt.equals("COSINE")){
-			//TODO
-			return 1;
+			return cosineSimilarity(bag1, bag2);
 		}else if(sim_opt.equals("NAIVE")){
 			//Will default to most frequent sense. This is the base line
 			//Average		0.6123162098808664	0.30306689286977656	0.3693343514114866
 			return 0;
 		}
-		System.out.println("ERROR!!!");
+		System.out.println("ERROR! -- sim_opt not recognized");
 		return 0;
 	}
 	
@@ -784,15 +800,36 @@ public class Lesk {
 			e.printStackTrace();
 			return null;
 		}
-		String context_opt = "WINDOW";
+		String context_opt = Lesk.ALL_WORDS;
 		int window_size = 3;
-		String sim_opt = "JACCARD";
+		String sim_opt = "COSINE";
 		
 		model.predict(context_opt, window_size, sim_opt);
 		
 		ArrayList<Double> res = model.evaluate(1);
 		printResults(res, filename);
 		return res;
+	}
+
+	private static void progress(int cur, int max){
+		progress((double)cur, (double)max, cur == max);
+	}
+
+	private static void progress(double cur, double max, boolean done){
+		int length = 50;
+		int inc = (int)Math.round((cur/max) * length);
+		StringBuilder output = new StringBuilder();
+		output.append("|");
+		for(int i = 0; i < length; i++){
+			if(i < inc) output.append("#");
+			else output.append(" ");
+		}
+		if(done){
+			output.append(String.format("| done \n", (100.0 * cur/max)));
+		}else{
+			output.append(String.format("| %.1f%% \r", (100.0 * cur/max)));
+		}
+		System.err.print(output.toString());
 	}
 
 	/**
@@ -802,6 +839,8 @@ public class Lesk {
 		if(setup()){
 			int normalizer = args.length;
 			double[] results = new double[3];
+			int max = args.length;
+			int cur = 0;
 			for(String file : args){
 				ArrayList<Double> res = processFile(file);
 				if(res != null && res.size() == 3){
@@ -811,7 +850,8 @@ public class Lesk {
 				}else{
 					normalizer--;
 				}
-				
+				cur++;
+				progress(cur, max);
 			}
 			ArrayList<Double> avg = new ArrayList<Double>(3);
 			avg.add(results[0] / (double)normalizer);
