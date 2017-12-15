@@ -107,6 +107,9 @@ public class Lesk {
 	public static final String ALL_WORDS_R = "ALL_WORDS_R";
 	public static final String WINDOW = "WINDOW";
 	public static final String _POS = "POS"; // not supported
+	public static final String JACCARD = "JACCARD";
+	public static final String COSINE = "COSINE";
+	public static final String NAIVE = "NAIVE";
 
 	// Static variables used as standard nlp libraries reduce runtime by only constructing once
 	private static IDictionary wordnetdict;
@@ -528,11 +531,11 @@ public class Lesk {
 	 * @return similarity score
 	 */
 	private double similarity(ArrayList<String> bag1, ArrayList<String> bag2, String sim_opt) {
-		if(sim_opt.equals("JACCARD")){
+		if(sim_opt.equals(Lesk.JACCARD)){
 			return jaccardSimilarity(bag1, bag2);
-		}else if(sim_opt.equals("COSINE")){
+		}else if(sim_opt.equals(Lesk.COSINE)){
 			return cosineSimilarity(bag1, bag2);
-		}else if(sim_opt.equals("NAIVE")){
+		}else if(sim_opt.equals(Lesk.NAIVE)){
 			//Will default to most frequent sense. This is the base line
 			//Average		0.6123162098808664	0.30306689286977656	0.3693343514114866
 			return 0;
@@ -541,6 +544,25 @@ public class Lesk {
 		return 0;
 	}
 	
+	private boolean validate(String context_option, int window_size, String sim_option){
+		if(context_option.equals(Lesk._POS)){
+			System.err.println("POS not implemented");
+			return false;
+		}
+
+		if(window_size < 1 || (window_size%2)==0){
+			System.err.println("Unacceptable window size");
+			return false;
+		}
+
+		if(context_option.equals(Lesk.ALL_WORDS) || context_option.equals(Lesk.ALL_WORDS_R) || context_option.equals(Lesk.WINDOW)){
+			if(sim_option.equals(Lesk.JACCARD) || sim_option.equals(Lesk.COSINE) || sim_option.equals(Lesk.NAIVE)){
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * TODO:
 	 * For each target word (from ambiguousWords) in each sentence (from testCorpus), create
@@ -557,6 +579,9 @@ public class Lesk {
 	 * @param sim_option: one of {COSINE, JACCARD}
 	 */
 	public void predict(String context_option, int window_size, String sim_option) {
+		if(!validate(context_option, window_size, sim_option)){
+			System.err.println("Unacceptable input parameters");
+		}
 		for(int i = 0; i < testCorpus.size(); i++){
 			Sentence sentence = testCorpus.get(i);
 			ArrayList<Pair<String, String>> aWords = ambiguousWords.get(i);
@@ -798,7 +823,7 @@ public class Lesk {
 	/**
 	 * Creates a Lesk object to process each file then prints the results to output 
 	 */
-	private static ArrayList<Double> processFile(String filename){
+	private static ArrayList<Double> processFile(String filename, String context_opt, int window_size, String sim_opt){
 		Lesk model = new Lesk();
 		try {
 			model.readTestData(filename);
@@ -807,9 +832,6 @@ public class Lesk {
 			e.printStackTrace();
 			return null;
 		}
-		String context_opt = Lesk.ALL_WORDS;
-		int window_size = 3;
-		String sim_opt = "COSINE";
 		
 		model.predict(context_opt, window_size, sim_opt);
 		
@@ -851,13 +873,19 @@ public class Lesk {
 	 * to decrease runtime 
 	 */
 	public static void main(String[] args) {
+
+		//Change input parameters (POS not implemented)
+		String context_opt = Lesk.WINDOW;
+		int window_size = 7;
+		String sim_opt = "COSINE";
+
 		if(setup()){
 			int normalizer = args.length;
 			double[] results = new double[3];
 			int max = args.length;
 			int cur = 0;
 			for(String file : args){
-				ArrayList<Double> res = processFile(file);
+				ArrayList<Double> res = processFile(file, context_opt, window_size, sim_opt);
 				if(res != null && res.size() == 3){
 					results[0] += res.get(0);
 					results[1] += res.get(1);
